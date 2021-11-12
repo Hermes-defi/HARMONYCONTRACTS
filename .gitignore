@@ -1,0 +1,14 @@
+node_modules
+
+.secret
+
+#Hardhat files
+cache
+artifacts
+abi
+
+truffle-config.js
+.idea
+
+build
+dev.txt
