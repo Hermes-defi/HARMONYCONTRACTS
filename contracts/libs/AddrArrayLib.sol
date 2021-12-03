@@ -5,13 +5,7 @@
   See the License for the specific language governing permissions and
   limitations under the License.
 */
-/*
 
-    http://moneytime.finance/
-
-    https://t.me/moneytimefinance
-
-*/
 // SPDX-License-Identifier: MIT
 pragma solidity 0.6.12;
 

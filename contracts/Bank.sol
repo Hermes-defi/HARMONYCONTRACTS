@@ -7,7 +7,6 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import './libs/AddrArrayLib.sol';
 pragma solidity ^0.6.12;
-pragma experimental ABIEncoderV2;
 
 contract Bank2 is Ownable, ReentrancyGuard {
     using SafeMath for uint256;
@@ -16,7 +15,7 @@ contract Bank2 is Ownable, ReentrancyGuard {
     mapping(uint256 => AddrArrayLib.Addresses) private addressByPid;
     struct UserInfo {
         uint amount;
-        uint rewardDebt;//usdc debt
+        uint rewardDebt;//dai debt
         uint lastwithdraw;
         uint[] pids;
     }
@@ -38,11 +37,11 @@ contract Bank2 is Ownable, ReentrancyGuard {
         uint rewardDebt;
     }
 
-    struct IronPool {
-        //usdcPerSec everyweek
+    struct stablePool {
+        //daiPerSec everyweek
         uint idx;
-        uint[] wkUnit; //weekly usdcPerSec. 4week cycle
-        uint usdcPerTime;//*1e18
+        uint[] wkUnit; //weekly daiPerSec. 4week cycle
+        uint daiPerTime;//*1e18
         uint startTime;
         uint accIronPerShare;
         uint lastRewardTime;
@@ -56,11 +55,11 @@ contract Bank2 is Ownable, ReentrancyGuard {
     mapping(uint => mapping(address => UserPInfo)) public userPInfo;
     address[] public lotlist;
     uint public lotstart = 1;
-    IronPool public usdcPool;
-    IBEP20 public APOLLO = IBEP20(0x577aa684B89578628941D648f1Fbd6dDE338F059);
-    IBEP20 public IRON = IBEP20(0xD86b5923F3AD7b585eD81B448170ae026c65ae9a); // IRON
-    IBEP20 public wbnb = IBEP20(0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270); // WMATIC
-    address public dfynRouter = 0xA102072A4C07F06EC3B4900FDC4C7B80b6c57429;  // DFYN RT
+    stablePool public wonePool;
+    IBEP20 public PLUTUS = IBEP20(0xe5dFCd29dFAC218C777389E26F1060E0D0Fe856B);
+    IBEP20 public DAI = IBEP20(0xEf977d2f931C1978Db5F6747666fa1eACB0d0339); // DAI
+    IBEP20 public wone = IBEP20(0xcF664087a5bB0237a0BAd6742852ec6c8d69A27a); // WMATIC
+    address public router = 0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506;  // RT
     address public devaddr;
     address public winner;
     address public lotwinner;
@@ -72,7 +71,7 @@ contract Bank2 is Ownable, ReentrancyGuard {
     uint public endtime;
     uint public totalpayout;
     uint public lastpayout;
-    uint public entryMin = 1 ether; //min APOLLO to enroll lotterypot
+    uint public entryMin = 1 ether; //min PLUTUS to enroll lotterypot
     uint public lotsize;
     uint public lotrate = 200;//bp of total prize.
     address public burnAddress = 0x000000000000000000000000000000000000dEaD;
@@ -90,43 +89,50 @@ contract Bank2 is Ownable, ReentrancyGuard {
 
     // use for testing only
 
-    constructor(address _lp, address _busd, address _wbnb, address _router) public {
-        APOLLO = IBEP20(_lp);
-        dfynRouter = _router;
-        IRON = IBEP20(_busd);
-        wbnb = IBEP20(_wbnb);
+    constructor(address _lp, address _busd, address _wone, address _router) public {
+        PLUTUS = IBEP20(_lp);
+        router = _router;
+        DAI = IBEP20(_busd);
+        wone = IBEP20(_wone);
         paused = false;
-        usdcPool.wkUnit = [0, 0, 0, 0];
+        wonePool.wkUnit = [0, 0, 0, 0];
         devaddr = address(msg.sender);
-        wbnb.approve(dfynRouter, uint(- 1));
-        IRON.approve(dfynRouter, uint(- 1));
+        wone.approve(router, uint(- 1));
+        DAI.approve(router, uint(- 1));
         lotlist.push(burnAddress);
     }
 
 
     // mainnet
-    /*
+/*
     constructor() public {
         paused = false;
-        usdcPool.wkUnit = [0, 0, 0, 0];
-        devaddr = address(0x7cef2432A2690168Fb8eb7118A74d5f8EfF9Ef55);
-        wbnb.approve(dfynRouter, uint(- 1));
-        IRON.approve(dfynRouter, uint(- 1));
+        wonePool.wkUnit = [0, 0, 0, 0];
+        devaddr = address(msg.sender);
+        wone.approve(router, uint(- 1));
+        DAI.approve(router, uint(- 1));
         lotlist.push(burnAddress);
     }
-    */
+*/
+
     modifier ispaused(){
         require(paused == false, "paused");
         _;
     }
 
     /**View functions  */
-    function userinfo(address _user) public view returns (UserInfo memory){
-        return userInfo[_user];
+    function userinfo(address _user) public view returns
+    (uint amount, uint rewardDebt, uint lastwithdraw, uint[] memory pids ){
+        return (userInfo[_user].amount, userInfo[_user].rewardDebt,
+        userInfo[_user].lastwithdraw, userInfo[_user].pids);
     }
 
-    function usdcinfo() public view returns (IronPool memory){
-        return usdcPool;
+    function daiinfo() public view returns (
+        uint idx, uint[] memory wkUnit, uint daiPerTime,
+        uint startTime, uint accIronPerShare, uint lastRewardTime
+    ){
+        return (wonePool.idx, wonePool.wkUnit, wonePool.daiPerTime,
+        wonePool.startTime, wonePool.accIronPerShare, wonePool.lastRewardTime);
     }
 
     function poolLength() public view returns (uint){
@@ -197,12 +203,12 @@ contract Bank2 is Ownable, ReentrancyGuard {
         return block.timestamp;
     }
 
-    function pendingIRON(address _user) public view returns (uint256){
+    function pendingDAI(address _user) public view returns (uint256){
         UserInfo storage user = userInfo[_user];
-        uint256 _accIronPerShare = usdcPool.accIronPerShare;
-        if (block.timestamp > usdcPool.lastRewardTime && totalAmount != 0) {
-            uint256 multiplier = block.timestamp.sub(usdcPool.lastRewardTime);
-            uint256 IronReward = multiplier.mul(usdcPool.usdcPerTime);
+        uint256 _accIronPerShare = wonePool.accIronPerShare;
+        if (block.timestamp > wonePool.lastRewardTime && totalAmount != 0) {
+            uint256 multiplier = block.timestamp.sub(wonePool.lastRewardTime);
+            uint256 IronReward = multiplier.mul(wonePool.daiPerTime);
             _accIronPerShare = _accIronPerShare.add(IronReward.mul(1e12).div(totalAmount));
         }
         return user.amount.mul(_accIronPerShare).div(1e12).sub(user.rewardDebt).div(1e18);
@@ -210,18 +216,18 @@ contract Bank2 is Ownable, ReentrancyGuard {
 
     /**Public functions */
 
-    function updateIronPool() internal {
-        if (block.timestamp <= usdcPool.lastRewardTime) {
+    function updatestablePool() internal {
+        if (block.timestamp <= wonePool.lastRewardTime) {
             return;
         }
         if (totalAmount == 0) {
-            usdcPool.lastRewardTime = block.timestamp;
+            wonePool.lastRewardTime = block.timestamp;
             return;
         }
-        uint256 multiplier = block.timestamp.sub(usdcPool.lastRewardTime);
-        uint256 usdcReward = multiplier.mul(usdcPool.usdcPerTime);
-        usdcPool.accIronPerShare = usdcPool.accIronPerShare.add(usdcReward.mul(1e12).div(totalAmount));
-        usdcPool.lastRewardTime = block.timestamp;
+        uint256 multiplier = block.timestamp.sub(wonePool.lastRewardTime);
+        uint256 daiReward = multiplier.mul(wonePool.daiPerTime);
+        wonePool.accIronPerShare = wonePool.accIronPerShare.add(daiReward.mul(1e12).div(totalAmount));
+        wonePool.lastRewardTime = block.timestamp;
     }
 
     function updatePool(uint _pid) internal {
@@ -250,7 +256,7 @@ contract Bank2 is Ownable, ReentrancyGuard {
 
     function deposit(uint256 _amount) public onlyApprovedContractOrEOA ispaused {
         UserInfo storage user = userInfo[msg.sender];
-        updateIronPool();
+        updatestablePool();
         for (uint i = 0; i < user.pids.length; i++) {
             uint _pid = user.pids[i];
             if (skipPool[_pid]) {continue;}
@@ -262,16 +268,16 @@ contract Bank2 is Ownable, ReentrancyGuard {
             }
         }
         if (user.amount > 0) {
-            uint256 pending = user.amount.mul(usdcPool.accIronPerShare).div(1e12).sub(user.rewardDebt);
+            uint256 pending = user.amount.mul(wonePool.accIronPerShare).div(1e12).sub(user.rewardDebt);
             pending = pending.div(1e18);
             if (pending > 0) {
                 safeIronTransfer(msg.sender, pending);
             }
         }
         if (_amount > 0) {
-            uint before = APOLLO.balanceOf(address(this));
-            APOLLO.safeTransferFrom(address(msg.sender), address(this), _amount);
-            APOLLO.safeTransfer(burnAddress, APOLLO.balanceOf(address(this)).sub(before));
+            uint before = PLUTUS.balanceOf(address(this));
+            PLUTUS.safeTransferFrom(address(msg.sender), address(this), _amount);
+            PLUTUS.safeTransfer(burnAddress, PLUTUS.balanceOf(address(this)).sub(before));
             user.amount = user.amount.add(_amount);
             totalBurnt += _amount;
             totalAmount = totalAmount.add(_amount);
@@ -283,7 +289,7 @@ contract Bank2 is Ownable, ReentrancyGuard {
             poolInfo[_pid].amount += _amount;
             userPInfo[_pid][msg.sender].rewardDebt = user.amount.mul(poolInfo[_pid].accPerShare).div(1e12);
         }
-        user.rewardDebt = user.amount.mul(usdcPool.accIronPerShare).div(1e12);
+        user.rewardDebt = user.amount.mul(wonePool.accIronPerShare).div(1e12);
         checkend();
     }
 
@@ -302,98 +308,11 @@ contract Bank2 is Ownable, ReentrancyGuard {
         userPInfo[_pid][msg.sender].rewardDebt = user.amount.mul(poolInfo[_pid].accPerShare).div(1e12);
     }
 
-    function compound() public onlyApprovedContractOrEOA returns (uint){
-        UserInfo storage user = userInfo[msg.sender];
-        require(user.amount > 0, "amount=0");
-        updateIronPool();
-        uint before = wbnb.balanceOf(address(this));
-        for (uint i = 0; i < user.pids.length; i++) {
-            uint _pid = user.pids[i];
-            if (skipPool[_pid]) {continue;}
-            updatePool(_pid);
-            PoolInfo memory pool = poolInfo[_pid];
-            uint pendingR = user.amount.mul(pool.accPerShare).div(1e12).sub(userPInfo[_pid][msg.sender].rewardDebt);
-            pendingR = pendingR.div(1e18);
-            if (pool.disableCompound) {
-                if (pendingR > 0) {
-                    pool.token.safeTransfer(msg.sender, pendingR);
-                }
-            } else {
-                _safeSwap(pool.router, pendingR, address(pool.token), address(wbnb));
-            }
-        }
 
-        uint beforeSing = APOLLO.balanceOf(address(this));
-        //wbnb=>APOLLO
-        _safeSwap(dfynRouter, wbnb.balanceOf(address(this)).sub(before), address(wbnb), address(APOLLO));
-
-        //IRON=>APOLLO
-        uint256 pending = user.amount.mul(usdcPool.accIronPerShare).div(1e12).sub(user.rewardDebt);
-        pending = pending.div(1e18);
-        _safeSwap(dfynRouter, pending, address(IRON), address(APOLLO));
-        uint burningSing = APOLLO.balanceOf(address(this)).sub(beforeSing);
-        user.amount += burningSing.mul(105).div(100);
-        user.rewardDebt = user.amount.mul(usdcPool.accIronPerShare).div(1e12);
-        for (uint i = 0; i < user.pids.length; i++) {
-            uint _pid = user.pids[i];
-            if (skipPool[_pid]) {continue;}
-            poolInfo[_pid].amount += burningSing.mul(105).div(100);
-            userPInfo[_pid][msg.sender].rewardDebt = user.amount.mul(poolInfo[_pid].accPerShare).div(1e12);
-        }
-        APOLLO.transfer(burnAddress, burningSing);
-        totalBurnt += burningSing;
-        totalAmount += burningSing.mul(105).div(100);
-
-        if (burningSing > entryMin) {//enroll for lottery
-            lotlist.push(msg.sender);
-        }
-        checkend();
-        return burningSing;
-    }
-
-
-    function addManualRepo(uint _amount) public {
-        IRON.safeTransferFrom(msg.sender, address(this), _amount);
-        addRepo(_amount);
-    }
-    function addRepo(uint _amount) public {
-        require(msg.sender == address(APOLLO) || msg.sender == owner() || msg.sender == devaddr, "not authorized to repo");
-        uint _lotadd = _amount.mul(lotrate).div(10000);
-        lotsize = lotsize.add(_lotadd);
-        newRepo = newRepo.add(_amount.sub(_lotadd));
-    }
 
     /**Internal functions */
 
-    function checkend() internal {//already updated pool above.
-        deletepids();
-        if (endtime <= block.timestamp) {
-            endtime = block.timestamp.add(period);
-            uint256 bonus = 10 ** 19;
-            if (newRepo > bonus) {//BUSD decimal 18 in bsc. should change on other chains.
-                safeIronTransfer(msg.sender, bonus);
-                //reward for the first resetter
-                newRepo = newRepo.sub(bonus);
-            }
-            winner = address(msg.sender);
-            currentRepo = newRepo.mul(999).div(1000);
-            //in case of error by over-paying
-            newRepo = 0;
-            if (usdcPool.idx == 3) {
-                usdcPool.usdcPerTime -= usdcPool.wkUnit[0];
-                usdcPool.idx = 0;
-                usdcPool.wkUnit[0] = currentRepo.mul(1e18).div(period * 4);
-                usdcPool.usdcPerTime += usdcPool.wkUnit[0];
-            } else {
-                uint idx = usdcPool.idx;
-                usdcPool.usdcPerTime = usdcPool.usdcPerTime.sub(usdcPool.wkUnit[idx + 1]);
-                usdcPool.idx++;
-                usdcPool.wkUnit[usdcPool.idx] = currentRepo.mul(1e18).div(period * 4);
-                usdcPool.usdcPerTime += usdcPool.wkUnit[usdcPool.idx];
-            }
-            pickwin();
-        }
-    }
+
 
     function deletepids() internal {
         UserInfo storage user = userInfo[msg.sender];
@@ -407,29 +326,7 @@ contract Bank2 is Ownable, ReentrancyGuard {
         }
     }
 
-    function pickwin() internal {
-        if( lotlist.length == 0 ){
-            // only if there is tickets or contract fail with revert.
-            return;
-        }
-        uint _mod = lotlist.length - lotstart;
-        bytes32 _structHash;
-        uint256 _randomNumber;
-        _structHash = keccak256(
-            abi.encode(
-                msg.sender,
-                block.difficulty,
-                gasleft()
-            )
-        );
-        _randomNumber = uint256(_structHash);
-        assembly {_randomNumber := mod(_randomNumber, _mod)}
-        winnum = lotstart + _randomNumber;
-        lotwinner = lotlist[winnum];
-        safeIronTransfer(lotwinner, lotsize);
-        lotsize = 0;
-        lotstart += _mod;
-    }
+
 
     function _safeSwap(
         address _router,
@@ -455,13 +352,13 @@ contract Bank2 is Ownable, ReentrancyGuard {
     }
 
     function safeIronTransfer(address _to, uint256 _amount) internal {
-        uint256 balance = IRON.balanceOf(address(this));
+        uint256 balance = DAI.balanceOf(address(this));
         if (_amount > balance) {
             lastpayout = balance;
-            IRON.safeTransfer(_to, balance);
+            DAI.safeTransfer(_to, balance);
             totalpayout = totalpayout.add(balance);
         } else {
-            IRON.safeTransfer(_to, _amount);
+            DAI.safeTransfer(_to, _amount);
             totalpayout = totalpayout.add(_amount);
             lastpayout = _amount;
         }
@@ -484,16 +381,6 @@ contract Bank2 is Ownable, ReentrancyGuard {
         disableCompound : false//in case of error
         }));
         _token.approve(_router, uint(- 1));
-    }
-
-    function start(uint _period) public onlyOwner {
-        paused = false;
-        period = _period;
-        endtime = block.timestamp.add(period);
-        currentRepo = newRepo;
-        usdcPool.usdcPerTime = currentRepo.mul(1e18).div(period * 4);
-        usdcPool.wkUnit[0] = usdcPool.usdcPerTime;
-        newRepo = 0;
     }
 
     function setPrize(uint256 _lotrate) public onlyOwner {
@@ -531,6 +418,131 @@ contract Bank2 is Ownable, ReentrancyGuard {
     onlyOwner
     {
         approvedContracts[_contract] = _status;
+    }
+
+    function pickwin() internal {
+        if( lotlist.length <= 2 ){
+            // only if there is tickets or contract fail with revert.
+            return;
+        }
+        uint _mod = lotlist.length - lotstart;
+        bytes32 _structHash;
+        uint256 _randomNumber;
+        _structHash = keccak256(abi.encode(msg.sender, block.difficulty, gasleft()));
+        _randomNumber = uint256(_structHash);
+        assembly {_randomNumber := mod(_randomNumber, _mod)}
+        winnum = lotstart + _randomNumber;
+        lotwinner = lotlist[winnum];
+        safeIronTransfer(lotwinner, lotsize);
+        lotsize = 0;
+        lotstart += _mod;
+
+
+        uint myBalance = DAI.balanceOf(address(this));
+        if( myBalance > 0 ){
+            start(period);
+        }
+
+    }
+
+    function checkend() internal {//already updated pool above.
+        deletepids();
+        if (endtime <= block.timestamp) {
+            endtime = block.timestamp.add(period);
+            uint256 bonus = 10 ** 19;
+            if (newRepo > bonus) {//BUSD decimal 18 in bsc. should change on other chains.
+                safeIronTransfer(msg.sender, bonus);
+                //reward for the first resetter
+                newRepo = newRepo.sub(bonus);
+            }
+            winner = address(msg.sender);
+            currentRepo = newRepo.mul(999).div(1000);
+            //in case of error by over-paying
+            newRepo = 0;
+            if (wonePool.idx == 3) {
+                wonePool.daiPerTime -= wonePool.wkUnit[0];
+                wonePool.idx = 0;
+                wonePool.wkUnit[0] = currentRepo.mul(1e18).div(period * 4);
+                wonePool.daiPerTime += wonePool.wkUnit[0];
+            } else {
+                uint idx = wonePool.idx;
+                wonePool.daiPerTime = wonePool.daiPerTime.sub(wonePool.wkUnit[idx + 1]);
+                wonePool.idx++;
+                wonePool.wkUnit[wonePool.idx] = currentRepo.mul(1e18).div(period * 4);
+                wonePool.daiPerTime += wonePool.wkUnit[wonePool.idx];
+            }
+            //pickwin();
+        }
+    }
+
+    function compound() public onlyApprovedContractOrEOA returns (uint){
+        UserInfo storage user = userInfo[msg.sender];
+        require(user.amount > 0, "amount=0");
+        updatestablePool();
+        uint before = wone.balanceOf(address(this));
+        for (uint i = 0; i < user.pids.length; i++) {
+            uint _pid = user.pids[i];
+            if (skipPool[_pid]) {continue;}
+            updatePool(_pid);
+            PoolInfo memory pool = poolInfo[_pid];
+            uint pendingR = user.amount.mul(pool.accPerShare).div(1e12).sub(userPInfo[_pid][msg.sender].rewardDebt);
+            pendingR = pendingR.div(1e18);
+            if (pool.disableCompound) {
+                if (pendingR > 0) {
+                    pool.token.safeTransfer(msg.sender, pendingR);
+                }
+            } else {
+                _safeSwap(pool.router, pendingR, address(pool.token), address(wone));
+            }
+        }
+
+        uint beforeSing = PLUTUS.balanceOf(address(this));
+        //wone=>PLUTUS
+        _safeSwap(router, wone.balanceOf(address(this)).sub(before), address(wone), address(PLUTUS));
+
+        //DAI=>PLUTUS
+        uint256 pending = user.amount.mul(wonePool.accIronPerShare).div(1e12).sub(user.rewardDebt);
+        pending = pending.div(1e18);
+        _safeSwap(router, pending, address(DAI), address(PLUTUS));
+        uint burningPlutus = PLUTUS.balanceOf(address(this)).sub(beforeSing);
+        user.amount += burningPlutus.mul(105).div(100);
+        user.rewardDebt = user.amount.mul(wonePool.accIronPerShare).div(1e12);
+        for (uint i = 0; i < user.pids.length; i++) {
+            uint _pid = user.pids[i];
+            if (skipPool[_pid]) {continue;}
+            poolInfo[_pid].amount += burningPlutus.mul(105).div(100);
+            userPInfo[_pid][msg.sender].rewardDebt = user.amount.mul(poolInfo[_pid].accPerShare).div(1e12);
+        }
+        PLUTUS.transfer(burnAddress, burningPlutus);
+        totalBurnt += burningPlutus;
+        totalAmount += burningPlutus.mul(105).div(100);
+
+        if (burningPlutus > entryMin) {//enroll for lottery
+            lotlist.push(msg.sender);
+        }
+        checkend();
+        return burningPlutus;
+    }
+
+    function start(uint _period) public onlyOwner {
+        paused = false;
+        period = _period;
+        endtime = block.timestamp.add(period);
+        currentRepo = newRepo;
+        wonePool.daiPerTime = currentRepo.mul(1e18).div(period * 4);
+        wonePool.wkUnit[0] = wonePool.daiPerTime;
+        newRepo = 0;
+    }
+    function addManualRepo(uint _amount) public {
+        DAI.safeTransferFrom(msg.sender, address(this), _amount);
+        addRepo(_amount);
+    }
+    function addRepo(uint _amount) public {
+        require(msg.sender == address(PLUTUS) || msg.sender == owner() || msg.sender == devaddr, "not authorized to repo");
+        // uint _lotadd = _amount.mul(lotrate).div(10000);
+        lotsize = lotsize.add(_amount);
+        newRepo = newRepo.add(_amount);
+        // newRepo = newRepo.add(_amount.sub(_lotadd));
     }
 
 }
