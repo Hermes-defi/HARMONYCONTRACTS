@@ -10,14 +10,17 @@ import "./libs/SafeERC20.sol";
 
 import "./libs/IERC20.sol";
 
+import "./PresaleToken.sol";
+
 pragma solidity ^0.6.12;
 
 // TokenToken
 contract PlutusPreSale is ReentrancyGuard, Ownable {
+    using SafeERC20 for PresaleToken;
     using SafeERC20 for IERC20;
     using SafeMath for uint256;
 
-    IERC20 tmpToken;
+    PresaleToken tmpToken;
     IERC20 DAI; // 0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174;
     IERC20 finalToken;
     address public feeAddress = 0x80956dCf2a4302176B0cE0c0b4fCE71081b1d6A7;
@@ -48,7 +51,7 @@ contract PlutusPreSale is ReentrancyGuard, Ownable {
         startBlock = _startBlock;
         endBlock   = _endBlock;
         pPLUTUSPrice = _pPLUTUSPrice;
-        tmpToken = IERC20(_tmpToken);
+        tmpToken = PresaleToken(_tmpToken);
         DAI = IERC20(_DAI);
         tmpToken.balanceOf(address(this));
         DAI.balanceOf(address(this));
@@ -134,7 +137,7 @@ contract PlutusPreSale is ReentrancyGuard, Ownable {
         feeAddress = _feeAddress;
     }
     function setToken(address _token) external onlyOwner {
-        tmpToken = IERC20(_token);
+        tmpToken = PresaleToken(_token);
         tmpToken.balanceOf(address(this));
     }
     function setDAIContract(address _DAI) external onlyOwner {
