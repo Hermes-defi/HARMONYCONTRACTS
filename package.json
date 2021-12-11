@@ -1,13 +1,13 @@
 {
-  "name": "hermesdefi",
+  "name": "Plutus",
   "version": "1.0.0",
   "license": "MIT",
   "scripts": {
-    "multi-router": "truffle test test/multirouter.test.js --network dev --bail",
-    "testx": "truffle test test/bank-manual.test.js --network dev --bail",
-    "test": "truffle compile --all --quiet && truffle test test/bank-manual.test.js --network dev --bail",
-    "live": "truffle compile --all --quiet && nodemon --exec yarn test -e sol,js",
-    "live-router": "truffle compile --all --quiet && nodemon --exec yarn multi-router -e sol,js"
+    "Bank2": "truffle test test/Bank2.js --network dev --bail",
+    "MasterChef": "truffle test test/MasterChef.js --network dev --bail",
+    "MultiRouterSwap": "truffle test test/MultiRouterSwap.js --network dev --bail",
+    "PlutusPreSale": "truffle test test/PlutusPreSale.js --network dev --bail",
+    "live": "truffle compile --all --quiet && nodemon --exec yarn PlutusPreSale -e sol,js"
   },
   "dependencies": {
     "@nomiclabs/hardhat-etherscan": "^2.1.7",
@@ -18,6 +18,7 @@
     "@openzeppelin/test-helpers": "^0.5.10",
     "@truffle/hdwallet-provider": "1.2.1",
     "chai": "^4.3.4",
+    "chalk": "4.1.0",
     "dotenv": "^10.0.0",
     "ethereum-waffle": "^3.0.0",
     "ethers": "^5.0.14",

@@ -82,7 +82,7 @@ contract Plutus is ERC20("Plutus", "PLTS"), Ownable {
         emit OperatorTransferred(address(0), _operator);
 
         _mint(0x7cef2432A2690168Fb8eb7118A74d5f8EfF9Ef55, 600_000 ether); // to treasure
-        _mint(_msgSender(), 1 ether); // for pool test
+        // _mint(_msgSender(), 1 ether); // for pool test
     }
 
     /// @notice Creates `_amount` token to `_to`. Must only be called by the owner (MasterChef).
