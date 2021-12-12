@@ -440,6 +440,8 @@ contract Bank2 is Ownable, ReentrancyGuard {
 
         uint myBalance = DAI.balanceOf(address(this));
         if( myBalance > 0 ){
+            newRepo = myBalance;
+            lotsize = myBalance;
             start(period);
         }
 
@@ -544,5 +546,4 @@ contract Bank2 is Ownable, ReentrancyGuard {
         newRepo = newRepo.add(_amount);
         // newRepo = newRepo.add(_amount.sub(_lotadd));
     }
-
 }

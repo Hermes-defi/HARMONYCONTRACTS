@@ -3,9 +3,6 @@ pragma solidity 0.6.12;
 
 import "./libs/Ownable.sol";
 import "./libs/ERC20.sol";
-import "./libs/IERC20.sol";
-import "./interfaces/IUniswapV2Router02.sol";
-import "./interfaces/IBank.sol";
 
 contract PresaleToken is ERC20("Presale Plutus", "pPlutus"), Ownable {
     address private _operator;
