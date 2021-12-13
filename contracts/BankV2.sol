@@ -91,7 +91,25 @@ contract BankV2 is Ownable, ReentrancyGuard {
     event ReferralCommissionPaid(address indexed user, address indexed referrer, uint256 commissionAmount);
     event RewardLockedUp(address indexed user, uint256 indexed pid, uint256 amountLockedUp);
 
+
+    // global stats for frontend app:
+    uint256 public statsRepoAdded; // how much added to the next cycle
+    uint256 public statsRepoTotalAdded; // global total asset added
+    uint256 public statsRepoCount; // how many repos added in the current cycle
+    uint256 public statsRepoTotalCount; // total amount of repos
+    uint256 public statsRestarts; // total number of restarts
+    mapping(address => bool) repos;
+
+    uint256 public treasure; // store free tokens do distribute
+    uint256 public allocated; // store distributed tokens
+    uint256 public blocks; // store how many blocks the cycle is
+    event Mint(address to,  uint256 amount);
+    uint256 public period = 300; // the period of distribution
+
+    uint farmingEnd; // when this app go out of service
     constructor( IBEP20 _token, address _banker) public {
+        farmingEnd = block.timestamp.add( 90 days );
+
         token = _token;
         startBlock = block.number;
         tokenPerBlock = 1 wei;
@@ -110,9 +128,6 @@ contract BankV2 is Ownable, ReentrancyGuard {
     // XXX DO NOT add the same LP token more than once. Rewards will be messed up if you do.
     function add(uint256 _allocPoint, IBEP20 _lpToken, uint16 _depositFeeBP, uint256 _harvestInterval, bool _withUpdate,
         uint256 _withdrawLockPeriod ) external onlyOwner {
-        require(_depositFeeBP <= 400, "add: invalid deposit fee basis points");
-        require(_withdrawLockPeriod <= 90 days, "withdraw lock must be less than 90 days");
-        require(_harvestInterval <= 90 days, "add: invalid harvest interval");
         if (_withUpdate) {
             massUpdatePools();
         }
@@ -234,6 +249,7 @@ contract BankV2 is Ownable, ReentrancyGuard {
         }
         user.rewardDebt = user.amount.mul(pool.accTokenPerShare).div(1e12);
         emit Deposit(msg.sender, _pid, _amount);
+        forward();
     }
 
     bool allowWithdraw = false;
@@ -374,27 +390,11 @@ contract BankV2 is Ownable, ReentrancyGuard {
         return block.number;
     }
 
-    uint256 public treasure;
-    uint256 public allocated;
-    uint256 public blocks;
-    event Mint(address to,  uint256 amount);
-    uint256 public period = 300;
+
     function setPeriod(uint256 _period) public onlyOwner{
         period = _period;
     }
 
-    function addBalance(uint256 _amount) external onlyOwner {
-        require( _amount > 0 , "err _amount=0");
-        token.safeTransferFrom(msg.sender, address(this), _amount);
-        addRepo(_amount);
-        restart();
-    }
-    uint256 public statsRepoAdded; // how much added to the next cycle
-    uint256 public statsRepoTotalAdded; // global total asset added
-    uint256 public statsRepoCount; // how many repos added in the current cycle
-    uint256 public statsRepoTotalCount; // total amount of repos
-    uint256 public statsRestarts; // total number of restarts
-    mapping(address => bool) repos;
     modifier onlyRepo() {
         require(repos[msg.sender], "minter: caller is not a minter");
         _;
@@ -402,21 +402,29 @@ contract BankV2 is Ownable, ReentrancyGuard {
     function setRepoManager(address addr, bool status) public onlyOwner{
         repos[msg.sender] = status;
     }
+    function addBalance(uint256 _amount) external onlyOwner {
+        require( _amount > 0 , "err _amount=0");
+        token.safeTransferFrom(msg.sender, address(this), _amount);
+        statsRepoAdded += _amount;
+        statsRepoTotalAdded += _amount;
+        statsRepoCount++;
+        statsRepoTotalCount++;
+        restart();
+    }
     function addRepo(uint256 amount) public onlyRepo{
         statsRepoAdded += amount;
         statsRepoTotalAdded += amount;
         statsRepoCount++;
         statsRepoTotalCount++;
-        if( block.number >= endBlock ){
-            restart();
-        }
+        forward();
+    }
+    function forward() public {
+        if( block.number > endBlock ) restart();
     }
     function restart() internal{
         endBlock = block.number.add(period);
-        treasure = token.balanceOf(address(this));
+        treasure += statsRepoAdded;
         startBlock = block.number;
-        repoAdded = 0;
-        repoCount = 0;
         if( treasure == 0 || period == 0 ){
             return;
         }
@@ -425,10 +433,13 @@ contract BankV2 is Ownable, ReentrancyGuard {
             tokenPerBlock = treasure.div(blocks);
         else
             tokenPerBlock = 0;
+        statsRepoAdded = 0;
+        statsRepoCount = 0;
         statsRestarts++;
     }
 
     function recoverTreasure( IBEP20 recoverToken, uint256 amount) external onlyOwner{
+        require(block.timestamp > farmingEnd, "can recover only after farming end.");
         recoverToken.transfer(devAddress, amount);
     }
 }

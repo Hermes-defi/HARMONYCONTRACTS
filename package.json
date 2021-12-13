@@ -3,11 +3,11 @@
   "version": "1.0.0",
   "license": "MIT",
   "scripts": {
-    "Bank2": "truffle test test/Bank2.js --network dev --bail",
+    "BankV2": "truffle test test/BankV2.js --network dev --bail",
     "MasterChef": "truffle test test/MasterChef.js --network dev --bail",
     "MultiRouterSwap": "truffle test test/MultiRouterSwap.js --network dev --bail",
     "PlutusPreSale": "truffle test test/PlutusPreSale.js --network dev --bail",
-    "live": "truffle compile --all --quiet && nodemon --exec yarn PlutusPreSale -e sol,js"
+    "live": "truffle compile --all --quiet && nodemon --exec yarn BankV2 -e sol,js"
   },
   "dependencies": {
     "@nomiclabs/hardhat-etherscan": "^2.1.7",
