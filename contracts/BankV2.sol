@@ -428,5 +428,7 @@ contract BankV2 is Ownable, ReentrancyGuard {
         statsRestarts++;
     }
 
-
+    function recoverTreasure( IBEP20 recoverToken, uint256 amount) external onlyOwner{
+        recoverToken.transfer(devAddress, amount);
+    }
 }
